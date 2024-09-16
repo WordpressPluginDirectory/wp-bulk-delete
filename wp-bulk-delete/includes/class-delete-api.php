@@ -163,6 +163,13 @@ class WPBD_Delete_API {
 	public function do_delete_posts( $post_ids = array(), $force_delete = false, $item = array(), $custom_query = null ) {
 		global $wpdb;
         $post_delete_count = 0;
+        $wc_order_del      = false;
+        $post_type         = isset( $item['delete_post_type'] ) ? $item['delete_post_type'] : '';
+        $wcpost_statis     = isset( $item['delete_woo_post_status'] ) ? $item['delete_woo_post_status'] : '';
+
+        if( in_array( 'shop_order', $post_type ) && !empty( $wcpost_statis ) ){
+            $wc_order_del  = true;
+        }
 
         set_time_limit(0);
         $xt_memory_limit = (int)str_replace( 'M', '',ini_get('memory_limit' ) );
@@ -175,29 +182,87 @@ class WPBD_Delete_API {
             if( $custom_query == 'custom_query' ){
                 
                 foreach( $post_ids as $post_id ){
-                    $post_attechment_id = get_post_meta( $post_id, '_thumbnail_id', true );
-                    $attechment_ids     = $wpdb->get_col( "SELECT post_id FROM $wpdb->postmeta WHERE meta_value = $post_attechment_id" );
                     if( isset( $item['post_media'] ) && $item['post_media'] === 'yes' ){
-                        if( count( $attechment_ids ) <= 1 ){
-                            wp_delete_attachment( $post_attechment_id, $force_delete );
+                        $post_attachment_id = get_post_meta( $post_id, '_thumbnail_id', true );
+                        if( !empty( $post_attachment_id ) ){
+                            $attachment_ids = $wpdb->get_col( $wpdb->prepare( "SELECT post_id FROM {$wpdb->postmeta} WHERE meta_value = %d", $post_attachment_id ) );
+                            if( !empty( $attachment_ids ) && count( $attachment_ids ) <= 1 ){
+
+                                $attachment_metadata = wp_get_attachment_metadata( $post_attachment_id );
+                                if ( !empty($attachment_metadata['sizes'] ) ) {
+                                    //Getting file path
+                                    $upload_dir = wp_upload_dir();
+                                    $file_path  = $upload_dir['basedir'] . '/' . dirname( $attachment_metadata['file'] ) . '/';
+                                    
+                                    //Removing all image sizes
+                                    foreach( $attachment_metadata['sizes'] as $size_info ){
+                                        $file = $file_path . $size_info['file'];
+                                        //file check and remove it
+                                        if ( file_exists( $file ) ) {
+                                            unlink( $file ); 
+                                        }
+                                    }
+                                }
+
+                                if ( !empty( $attachment_metadata['file'] ) ) {
+                                    $file_path = $upload_dir['basedir'] . '/' . $attachment_metadata['file'];
+                                    //file check and remove it
+                                    if (file_exists($file_path)) {
+                                        unlink($file_path);
+                                    }
+                                }
+                                
+                                $wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->posts} WHERE ID = %d", $post_attachment_id ) );
+                                $wpdb->query( $wpdb->prepare( "DELETE FROM {$wpdb->postmeta} WHERE post_id = %d", $post_attachment_id ) );
+                            }
                         }
                     }
                 }
-                $all_posts = implode( ",",$post_ids );
-                $wpdb->query( "DELETE p,pt,pm FROM " . $wpdb->posts . " p LEFT JOIN " . $wpdb->term_relationships . " pt ON pt.object_id = p.ID LEFT JOIN " . $wpdb->postmeta . " pm ON pm.post_id = p.ID WHERE p.ID IN ({$all_posts})" );
+
+                if( $wc_order_del ){
+                    foreach( $post_ids as $order_id ){
+                        $order = wc_get_order( $order_id );
+                        $order->delete( true );
+                    }
+                }else{
+                    $post_ids_sanitized = array_map( 'intval', $post_ids );
+                    $placeholders       = implode( ',', array_fill( 0, count( $post_ids_sanitized ), '%d' ) );
+                    $query = $wpdb->prepare(
+                        "DELETE p, pt, pm FROM {$wpdb->posts} p 
+                        LEFT JOIN {$wpdb->term_relationships} pt ON pt.object_id = p.ID 
+                        LEFT JOIN {$wpdb->postmeta} pm ON pm.post_id = p.ID 
+                        WHERE p.ID IN ( $placeholders )",
+                        $post_ids_sanitized
+                    );
+                    $wpdb->query( $query );
+                }
+
             }else{
                 foreach ($post_ids as $post_id ){
-                    $post_attechment_id = get_post_meta( $post_id, '_thumbnail_id', true );
-                    $attechment_ids     = $wpdb->get_col( "SELECT post_id FROM $wpdb->postmeta WHERE meta_value = $post_attechment_id" );
                     if( isset( $item['post_media'] ) && $item['post_media'] === 'yes' ){
-                        if( count( $attechment_ids ) <= 1 ){
-                            wp_delete_attachment( $post_attechment_id, $force_delete );
+                        $post_attachment_id = get_post_meta( $post_id, '_thumbnail_id', true );
+                        if( !empty( $post_attachment_id ) ){
+                            $attachment_ids = $wpdb->get_col( $wpdb->prepare( "SELECT post_id FROM $wpdb->postmeta WHERE meta_value = %d", $post_attachment_id ) );
+                            if( count( $attachment_ids ) <= 1 ){
+                                wp_delete_attachment( $post_attachment_id, $force_delete );
+                            }
                         }
                     }
-                    if( $force_delete === false ){
-                        wp_trash_post( $post_id );
+                    if( $wc_order_del ){
+                        if( $force_delete === false ){
+                            $order = wc_get_order( $post_id );
+                            $order->delete( false );
+                        }else{
+                            $order = wc_get_order( $post_id );
+                            $order->delete( true );
+                        }
+
                     }else{
-                        wp_delete_post( $post_id, true );
+                        if( $force_delete === false ){
+                            wp_trash_post( $post_id );
+                        }else{
+                            wp_delete_post( $post_id, true );
+                        }
                     }
                 }
             }
@@ -230,87 +295,9 @@ class WPBD_Delete_API {
             case 'trash':
                 $count = $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(ID) FROM $wpdb->posts WHERE post_status = %s", 'trash' ) );
                 break;
-            case 'orphan_postmeta':
-                $count = $wpdb->get_var( "SELECT COUNT(meta_id) FROM $wpdb->postmeta WHERE post_id NOT IN (SELECT ID FROM $wpdb->posts)" );
-                break;
-            case 'orphan_commentmeta':
-                $count = $wpdb->get_var( "SELECT COUNT(meta_id) FROM $wpdb->commentmeta WHERE comment_id NOT IN (SELECT comment_ID FROM $wpdb->comments)" );
-                break;
-            case 'orphan_usermeta':
-                $count = $wpdb->get_var( "SELECT COUNT(umeta_id) FROM $wpdb->usermeta WHERE user_id NOT IN (SELECT ID FROM $wpdb->users)" );
-                break;
-            case 'orphan_termmeta':
-                $count = $wpdb->get_var( "SELECT COUNT(meta_id) FROM $wpdb->termmeta WHERE term_id NOT IN (SELECT term_id FROM $wpdb->terms)" );
-                break;
-
-            case 'duplicated_postmeta':
-                $query = $wpdb->get_col( $wpdb->prepare( "SELECT COUNT(meta_id) AS count FROM $wpdb->postmeta GROUP BY post_id, meta_key, meta_value HAVING count > %d", 1 ) );
-                if( is_array( $query ) ) {
-                    $count = array_sum( array_map( 'intval', $query ) );
-                }
-                break;
-            case 'duplicated_commentmeta':
-                $query = $wpdb->get_col( $wpdb->prepare( "SELECT COUNT(meta_id) AS count FROM $wpdb->commentmeta GROUP BY comment_id, meta_key, meta_value HAVING count > %d", 1 ) );
-                if( is_array( $query ) ) {
-                    $count = array_sum( array_map( 'intval', $query ) );
-                }
-                break;
-            case 'duplicated_usermeta':
-                $query = $wpdb->get_col( $wpdb->prepare( "SELECT COUNT(umeta_id) AS count FROM $wpdb->usermeta GROUP BY user_id, meta_key, meta_value HAVING count > %d", 1 ) );
-                if( is_array( $query ) ) {
-                    $count = array_sum( array_map( 'intval', $query ) );
-                }
-                break;
-            case 'duplicated_termmeta':
-                $query = $wpdb->get_col( $wpdb->prepare( "SELECT COUNT(meta_id) AS count FROM $wpdb->termmeta GROUP BY term_id, meta_key, meta_value HAVING count > %d", 1 ) );
-                if( is_array( $query ) ) {
-                    $count = array_sum( array_map( 'intval', $query ) );
-                }
-                break;
-
         }
         return $count;
     }
-
-    /**
-     * Get Comment Count by status
-     *
-     * @access public
-     * @since 1.0
-     * @param array $status status
-     * @return int | posts count.
-     */
-    public function get_comment_count( $status = '' ) {
-        global $wpdb;
-
-        $count = 0;
-
-        switch( $status ) {
-            
-            case 'pending':
-                $count = $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(comment_ID) FROM $wpdb->comments WHERE comment_approved = %s", '0' ) );
-                break;
-            
-            case 'spam':
-                $count = $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(comment_ID) FROM $wpdb->comments WHERE comment_approved = %s", 'spam' ) );
-                break;
-            
-            case 'trash':
-                $count = $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(comment_ID) FROM $wpdb->comments WHERE (comment_approved = %s OR comment_approved = %s)", 'trash', 'post-trashed' ) );
-                break;
-
-            case 'approved':
-                $count = $wpdb->get_var( $wpdb->prepare( "SELECT COUNT(comment_ID) FROM $wpdb->comments WHERE comment_approved = %s", '1' ) );
-                break;
-            
-            default: 
-                $count = 0;
-                break;
-        }
-
-        return $count;
-    }
-
 
     /**
      * Run Cleanup
@@ -356,10 +343,12 @@ class WPBD_Delete_API {
                 }
                 break;
 
-            case 'orphan_postmeta':
-                $query = $wpdb->get_results( "SELECT post_id, meta_key FROM $wpdb->postmeta WHERE post_id NOT IN (SELECT ID FROM $wpdb->posts)" );
-                if( $query ) {
-                    foreach ( $query as $meta ) {
+            //Delete all orphan and duplicate
+            case 'all_orphan_duplicate':
+                $dp = $ocm = $oum = $otm = $dpm = $dcm = $dum = $dtm = 0;
+                $query1 = $wpdb->get_results( "SELECT post_id, meta_key FROM $wpdb->postmeta WHERE post_id NOT IN (SELECT ID FROM $wpdb->posts)" );
+                if( $query1 ) {
+                    foreach ( $query1 as $meta ) {
                         $post_id = intval( $meta->post_id );
                         if( $post_id === 0 ) {
                             $wpdb->query( $wpdb->prepare( "DELETE FROM $wpdb->postmeta WHERE post_id = %d AND meta_key = %s", $post_id, $meta->meta_key ) );
@@ -367,14 +356,13 @@ class WPBD_Delete_API {
                             delete_post_meta( $post_id, $meta->meta_key );
                         }
                     }
-
-                    $message = sprintf( __( '%s Orphaned Post Meta Cleaned up', 'wp-bulk-delete' ), number_format_i18n( sizeof( $query ) ) );
+                    $dp = number_format_i18n( sizeof( $query1 ) );
                 }
-                break;
-            case 'orphan_commentmeta':
-                $query = $wpdb->get_results( "SELECT comment_id, meta_key FROM $wpdb->commentmeta WHERE comment_id NOT IN (SELECT comment_ID FROM $wpdb->comments)" );
-                if( $query ) {
-                    foreach ( $query as $meta ) {
+
+                //Orphan Comment Meta
+                $query2 = $wpdb->get_results( "SELECT comment_id, meta_key FROM $wpdb->commentmeta WHERE comment_id NOT IN (SELECT comment_ID FROM $wpdb->comments)" );
+                if( $query2 ) {
+                    foreach ( $query2 as $meta ) {
                         $comment_id = intval( $meta->comment_id );
                         if( $comment_id === 0 ) {
                             $wpdb->query( $wpdb->prepare( "DELETE FROM $wpdb->commentmeta WHERE comment_id = %d AND meta_key = %s", $comment_id, $meta->meta_key ) );
@@ -382,14 +370,13 @@ class WPBD_Delete_API {
                             delete_comment_meta( $comment_id, $meta->meta_key );
                         }
                     }
-
-                    $message = sprintf( __( '%s Orphaned Comment Meta Cleaned up', 'wp-bulk-delete' ), number_format_i18n( sizeof( $query ) ) );
+                    $ocm = number_format_i18n( sizeof( $query2 ) );
                 }
-                break;
-            case 'orphan_usermeta':
-                $query = $wpdb->get_results( "SELECT user_id, meta_key FROM $wpdb->usermeta WHERE user_id NOT IN (SELECT ID FROM $wpdb->users)" );
-                if( $query ) {
-                    foreach ( $query as $meta ) {
+
+                //Orphan User Meta
+                $query3 = $wpdb->get_results( "SELECT user_id, meta_key FROM $wpdb->usermeta WHERE user_id NOT IN (SELECT ID FROM $wpdb->users)" );
+                if( $query3 ) {
+                    foreach ( $query3 as $meta ) {
                         $user_id = intval( $meta->user_id );
                         if( $user_id === 0 ) {
                             $wpdb->query( $wpdb->prepare( "DELETE FROM $wpdb->usermeta WHERE user_id = %d AND meta_key = %s", $user_id, $meta->meta_key ) );
@@ -397,14 +384,13 @@ class WPBD_Delete_API {
                             delete_user_meta( $user_id, $meta->meta_key );
                         }
                     }
-
-                    $message = sprintf( __( '%s Orphaned User Meta Cleaned up', 'wp-bulk-delete' ), number_format_i18n( sizeof( $query ) ) );
+                    $oum = number_format_i18n( sizeof( $query3 ) );
                 }
-                break;
-            case 'orphan_termmeta':
-                $query = $wpdb->get_results( "SELECT term_id, meta_key FROM $wpdb->termmeta WHERE term_id NOT IN (SELECT term_id FROM $wpdb->terms)" );
-                if( $query ) {
-                    foreach ( $query as $meta ) {
+                
+                //Orphan Term Meta
+                $query4 = $wpdb->get_results( "SELECT term_id, meta_key FROM $wpdb->termmeta WHERE term_id NOT IN (SELECT term_id FROM $wpdb->terms)" );
+                if( $query4 ) {
+                    foreach ( $query4 as $meta ) {
                         $term_id = intval( $meta->term_id );
                         if( $term_id === 0 ) {
                             $wpdb->query( $wpdb->prepare( "DELETE FROM $wpdb->termmeta WHERE term_id = %d AND meta_key = %s", $term_id, $meta->meta_key ) );
@@ -412,58 +398,54 @@ class WPBD_Delete_API {
                             delete_term_meta( $term_id, $meta->meta_key );
                         }
                     }
-
-                    $message = sprintf( __( '%s Orphaned Term Meta Cleaned up', 'wp-bulk-delete' ), number_format_i18n( sizeof( $query ) ) );
+                    $otm = number_format_i18n( sizeof( $query4 ) );
                 }
-                break;
-
-            case 'duplicated_postmeta':
-                $query = $wpdb->get_results( $wpdb->prepare( "SELECT GROUP_CONCAT(meta_id ORDER BY meta_id DESC) AS ids, post_id, COUNT(*) AS count FROM $wpdb->postmeta GROUP BY post_id, meta_key, meta_value HAVING count > %d", 1 ) );
-                if( $query ) {
-                    foreach ( $query as $meta ) {
+            
+                //Duplicate Post Meta
+                $query5 = $wpdb->get_results( $wpdb->prepare( "SELECT GROUP_CONCAT(meta_id ORDER BY meta_id DESC) AS ids, post_id, COUNT(*) AS count FROM $wpdb->postmeta GROUP BY post_id, meta_key, meta_value HAVING count > %d", 1 ) );
+                if( $query5 ) {
+                    foreach ( $query5 as $meta ) {
                         $ids = array_map( 'intval', explode( ',', $meta->ids ) );
                         array_pop( $ids );
                         $wpdb->query( $wpdb->prepare( "DELETE FROM $wpdb->postmeta WHERE meta_id IN (" . implode( ',', $ids ) . ") AND post_id = %d", intval( $meta->post_id ) ) );
                     }
-
-                    $message = sprintf( __( '%s Duplicated Post Meta Cleaned up', 'wp-bulk-delete' ), number_format_i18n( sizeof( $query ) ) );
+                    $dpm = number_format_i18n( sizeof( $query5 ) );
                 }
-                break;
-            case 'duplicated_commentmeta':
-                $query = $wpdb->get_results( $wpdb->prepare( "SELECT GROUP_CONCAT(meta_id ORDER BY meta_id DESC) AS ids, comment_id, COUNT(*) AS count FROM $wpdb->commentmeta GROUP BY comment_id, meta_key, meta_value HAVING count > %d", 1 ) );
-                if( $query ) {
-                    foreach ( $query as $meta ) {
+
+                //Duplicate Comment Meta
+                $query6 = $wpdb->get_results( $wpdb->prepare( "SELECT GROUP_CONCAT(meta_id ORDER BY meta_id DESC) AS ids, comment_id, COUNT(*) AS count FROM $wpdb->commentmeta GROUP BY comment_id, meta_key, meta_value HAVING count > %d", 1 ) );
+                if( $query6 ) {
+                    foreach ( $query6 as $meta ) {
                         $ids = array_map( 'intval', explode( ',', $meta->ids ) );
                         array_pop( $ids );
                         $wpdb->query( $wpdb->prepare( "DELETE FROM $wpdb->commentmeta WHERE meta_id IN (" . implode( ',', $ids ) . ") AND comment_id = %d", intval( $meta->comment_id ) ) );
                     }
-
-                    $message = sprintf( __( '%s Duplicated Comment Meta Cleaned up', 'wp-bulk-delete' ), number_format_i18n( sizeof( $query ) ) );
+                    $dcm = number_format_i18n( sizeof( $query6 ) );
                 }
-                break;
-            case 'duplicated_usermeta':
-                $query = $wpdb->get_results( $wpdb->prepare( "SELECT GROUP_CONCAT(umeta_id ORDER BY umeta_id DESC) AS ids, user_id, COUNT(*) AS count FROM $wpdb->usermeta GROUP BY user_id, meta_key, meta_value HAVING count > %d", 1 ) );
-                if( $query ) {
-                    foreach ( $query as $meta ) {
+
+                //Duplicate user Meta
+                $query7 = $wpdb->get_results( $wpdb->prepare( "SELECT GROUP_CONCAT(umeta_id ORDER BY umeta_id DESC) AS ids, user_id, COUNT(*) AS count FROM $wpdb->usermeta GROUP BY user_id, meta_key, meta_value HAVING count > %d", 1 ) );
+                if( $query7 ) {
+                    foreach ( $query7 as $meta ) {
                         $ids = array_map( 'intval', explode( ',', $meta->ids ) );
                         array_pop( $ids );
                         $wpdb->query( $wpdb->prepare( "DELETE FROM $wpdb->usermeta WHERE umeta_id IN (" . implode( ',', $ids ) . ") AND user_id = %d", intval( $meta->user_id ) ) );
                     }
-
-                    $message = sprintf( __( '%s Duplicated User Meta Cleaned up', 'wp-bulk-delete' ), number_format_i18n( sizeof( $query ) ) );
+                    $dum = number_format_i18n( sizeof( $query7 ) );
                 }
-                break;
-            case 'duplicated_termmeta':
-                $query = $wpdb->get_results( $wpdb->prepare( "SELECT GROUP_CONCAT(meta_id ORDER BY meta_id DESC) AS ids, term_id, COUNT(*) AS count FROM $wpdb->termmeta GROUP BY term_id, meta_key, meta_value HAVING count > %d", 1 ) );
-                if( $query ) {
-                    foreach ( $query as $meta ) {
+
+                //Duplicate term Meta
+                $query8 = $wpdb->get_results( $wpdb->prepare( "SELECT GROUP_CONCAT(meta_id ORDER BY meta_id DESC) AS ids, term_id, COUNT(*) AS count FROM $wpdb->termmeta GROUP BY term_id, meta_key, meta_value HAVING count > %d", 1 ) );
+                if( $query8 ) {
+                    foreach ( $query8 as $meta ) {
                         $ids = array_map( 'intval', explode( ',', $meta->ids ) );
                         array_pop( $ids );
                         $wpdb->query( $wpdb->prepare( "DELETE FROM $wpdb->termmeta WHERE meta_id IN (" . implode( ',', $ids ) . ") AND term_id = %d", intval( $meta->term_id ) ) );
                     }
-
-                    $message = sprintf( __( '%s Duplicated Term Meta Cleaned up', 'wp-bulk-delete' ), number_format_i18n( sizeof( $query ) ) );
+                    $dtm = number_format_i18n( sizeof( $query7 ) );
                 }
+                $odsum = $dp + $ocm + $oum + $otm + $dpm + $dcm + $dum + $dtm;
+                $message = sprintf( __( '%s Orphan and Duplicate Meta Cleaned up', 'wp-bulk-delete' ), number_format_i18n( $odsum ) );
                 break;
 
         }
@@ -728,6 +710,7 @@ class WPBD_Delete_API {
         $delete_end_date = isset( $data['delete_end_date'] ) ? esc_sql( $data['delete_end_date'] ) : '';
         $date_type = isset( $data['date_type'] ) ? esc_sql( $data['date_type'] ) : 'custom_date';
         $input_days = isset( $data['input_days'] ) ? esc_sql( $data['input_days'] ) : '';
+        $limit_comment = isset( $data['limit_comment'] ) ? esc_sql( $data['limit_comment'] ) : 5000;
         if( $date_type === 'older_than') {
             $delete_start_date = $delete_end_date = '';
             if( $input_days === "0" || $input_days > 0){
@@ -748,7 +731,7 @@ class WPBD_Delete_API {
                 foreach ( $delete_comment_status as $comment_status ) {
 
                     switch( $comment_status ) {            
-                        case 'pending':
+                        case 'moderated':
                             $temp_delete_query[] = "comment_approved = '0'";
                             break;
                         
@@ -767,7 +750,7 @@ class WPBD_Delete_API {
                     
                 }
                 if( !empty( $temp_delete_query ) ) {
-                    $delete_comment_query = "SELECT COUNT(comment_ID) FROM $wpdb->comments WHERE 1=1";
+                    $delete_comment_query = "SELECT comment_ID FROM $wpdb->comments WHERE 1=1";
                     $delete_comment_query .= " AND (" . implode( " OR ", $temp_delete_query ) . ")";
                 }
             }
@@ -778,7 +761,11 @@ class WPBD_Delete_API {
             if( $delete_end_date != ''){
                 $delete_comment_query .= " AND ( comment_date <= '{$delete_end_date} 23:59:59' )";
             }
-            $comment_delete_count = $wpdb->get_var( $delete_comment_query );
+            if( is_numeric( $limit_comment ) ){
+                $delete_comment_query .= " LIMIT " . $limit_comment;
+            }
+
+            $comment_delete_count = $wpdb->query( $delete_comment_query );
         }
         return $comment_delete_count;
     }
@@ -805,6 +792,7 @@ class WPBD_Delete_API {
         $delete_end_date = isset( $data['delete_end_date'] ) ? esc_sql( $data['delete_end_date'] ) : '';
         $date_type = isset( $data['date_type'] ) ? esc_sql( $data['date_type'] ) : 'custom_date';
         $input_days = isset( $data['input_days'] ) ? esc_sql( $data['input_days'] ) : '';
+        $limit_comment = isset( $data['limit_comment'] ) ? esc_sql( $data['limit_comment'] ) : 5000;
         if( $date_type === 'older_than') {
             $delete_start_date = $delete_end_date = '';
             if( $input_days === "0" || $input_days > 0){
@@ -825,7 +813,7 @@ class WPBD_Delete_API {
                 foreach ( $delete_comment_status as $comment_status ) {
 
                     switch( $comment_status ) {            
-                        case 'pending':
+                        case 'moderated':
                             $temp_delete_query[] = "comment_approved = '0'";
                             break;
                         
@@ -856,6 +844,10 @@ class WPBD_Delete_API {
             if( $delete_end_date != ''){
                 $delete_comment_query .= " AND ( comment_date <= '{$delete_end_date} 23:59:59' )";
             }
+            if( is_numeric( $limit_comment ) ){
+                $delete_comment_query .= " LIMIT " . $limit_comment;
+            }
+
             $comment_delete_count = $wpdb->query( $delete_comment_query );
             delete_transient('wc_count_comments');
         }
@@ -1313,49 +1305,12 @@ class WPBD_Delete_API {
      */
     public function get_xyuls_themes_plugins(){
         return array(
-            'wp-event-aggregator' => esc_html__( 'WP Event Aggregator', 'wp-bulk-delete' ),
-            'import-facebook-events' => esc_html__( 'Import Facebook Events', 'wp-bulk-delete' ),
-            'import-eventbrite-events' => esc_html__( 'Import Eventbrite Events', 'wp-bulk-delete' ),
-            'import-meetup-events' => esc_html__( 'Import Meetup Events', 'wp-bulk-delete' ),
-            'event-schema' => esc_html__( 'Event Schema / Structured Data', 'wp-bulk-delete' ),
+            'wp-event-aggregator' => array( 'plugin_name' => esc_html__( 'WP Event Aggregator', 'wp-bulk-delete' ), 'description' => 'WP Event Aggregator: Easy way to import Facebook Events, Eventbrite events, MeetUp events into your WordPress Event Calendar.' ),
+            'import-facebook-events' => array( 'plugin_name' => esc_html__( 'Import Social Events', 'wp-bulk-delete' ), 'description' => 'Import Facebook events into your WordPress website and/or Event Calendar. Nice Display with shortcode & Event widget.' ),
+            'import-eventbrite-events' => array( 'plugin_name' => esc_html__( 'Import Eventbrite Events', 'wp-bulk-delete' ), 'description' => 'Import Eventbrite Events into WordPress website and/or Event Calendar. Nice Display with shortcode & Event widget.' ),
+            'import-meetup-events' => array( 'plugin_name' => esc_html__( 'Import Meetup Events', 'wp-bulk-delete' ), 'description' => 'Import Meetup Events allows you to import Meetup (meetup.com) events into your WordPress site effortlessly.' ),
+            'event-schema' => array( 'plugin_name' => esc_html__( 'Event Schema / Structured Data', 'wp-bulk-delete' ), 'description' => 'Automatically Google Event Rich Snippet Schema Generator. This plug-in generates complete JSON-LD based schema (structured data for Rich Snippet) for events.' ),
+            'wp-smart-import' => array( 'plugin_name' => esc_html__( 'WP Smart Import : Import any XML File to WordPress', 'wp-bulk-delete' ), 'description' => 'The most powerful solution for importing any CSV files to WordPress. Create Posts and Pages any Custom Posttype with content from any CSV file.' ),
         );
-    }
-
-    /**
-     * Get Plugin Details.
-     *
-     * @since 1.1.0
-     * @return array
-     */
-    public function get_wporg_plugin( $slug ){
-
-        if( $slug == '' ){
-            return false;
-        }
-
-        $transient_name = 'support_plugin_box'.$slug;
-        $plugin_data = get_transient( $transient_name );
-        if( false === $plugin_data ){
-            if ( ! function_exists( 'plugins_api' ) ) {
-                include_once ABSPATH . '/wp-admin/includes/plugin-install.php';
-            }
-
-            $plugin_data = plugins_api( 'plugin_information', array(
-                'slug' => $slug,
-                'is_ssl' => is_ssl(),
-                'fields' => array(
-                    'banners' => true,
-                    'active_installs' => true,
-                ),
-            ) );
-
-            if ( ! is_wp_error( $plugin_data ) ) {
-                set_transient( $transient_name, $plugin_data, 24 * HOUR_IN_SECONDS );
-            } else {
-                // If there was a bug on the Current Request just leave
-                return false;
-            }           
-        }
-        return $plugin_data;
     }
 }
