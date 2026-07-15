@@ -39,6 +39,10 @@
 	// Delete posts form handle.
 	jQuery(document).ready(function() {
 	    jQuery('#delete_posts_submit').on( 'click', function() {
+
+			let proceed = validateSchedule("delete_posts_form");
+			if(!proceed) return;
+
 			if(jQuery('input[name="delete_time"]:checked').val() === "scheduled"){
 				jQuery("#delete_posts_form").attr('action', wpBulkDeleteData.siteUrl + '/wp-admin/admin-post.php');
 				jQuery("#delete_posts_form").submit();
@@ -115,7 +119,10 @@
 	            }else{
 	            	terms_space.html( '' );
 	            }	            
-	        });    
+	        });
+
+	        // Load term meta filter section
+	        wpbd_load_term_meta_filter( post_taxomony );
 	    });
 		
 		jQuery(document).on( 'change', '.taxonomy_terms_select', function() {
@@ -127,10 +134,44 @@
 		});
 	});
 
+	/**
+	 * Load Term Meta Filter section based on selected taxonomy
+	 */
+	function wpbd_load_term_meta_filter( taxonomy ) {
+		var term_meta_space = jQuery('.term_meta_filter_section');
+		var term_meta_dropdown = jQuery('#term_meta_key');
+		
+		if ( taxonomy !== '' ) {
+			var data = {
+				'action': 'render_termmeta_keys_by_taxonomy',
+				'taxonomy': taxonomy
+			};
+			
+			// Show spinner in the dropdown
+			term_meta_dropdown.html('<option value="">Loading...</option>');
+			term_meta_space.show();
+			
+			jQuery.post(ajaxurl, data, function(response) {
+				if( response != '' ) {
+					term_meta_dropdown.html( '<option value="">Select Term Meta Key</option>' + response );
+				} else {
+					term_meta_dropdown.html( '<option value="">No meta keys found</option>' );
+				}
+				term_meta_dropdown.trigger('chosen:updated');
+			});
+		} else {
+			term_meta_space.hide();
+		}
+	}
+
 
 	// Delete users form handle.
 	jQuery(document).ready(function() {
 	    jQuery('#delete_users_submit').on( 'click', function() {
+
+			let uproceed = validateSchedule("delete_users_form");
+			if(!uproceed) return;
+
 			if(jQuery('input[name="delete_time"]:checked').val() === "scheduled"){
 				jQuery("#delete_users_form").attr('action', wpBulkDeleteData.siteUrl + '/wp-admin/admin-post.php');
 				jQuery("#delete_users_form").submit();
@@ -164,6 +205,10 @@
 	// Delete comments form handle.
 	jQuery(document).ready(function() {
 	    jQuery('#delete_comments_submit').on( 'click', function() {
+
+			let cproceed = validateSchedule("delete_comments_form");
+			if(!cproceed) return;
+
 			if(jQuery('input[name="delete_time"]:checked').val() === "scheduled"){
 				jQuery("#delete_comments_form").attr('action', wpBulkDeleteData.siteUrl + '/wp-admin/admin-post.php');
 				jQuery("#delete_comments_form").submit();
@@ -382,10 +427,159 @@
 			svgIcon.toggleClass('rotated');
 		});
 
+		function updateSelectAllState() {
+			var total = jQuery('.cleanup_post_type').length;
+			if (total > 0) {
+				var checked = jQuery('.cleanup_post_type:checked').length;
+				jQuery('#select_all').prop('checked', total === checked);
+			}
+		}
+
 		jQuery('#select_all').change(function() {
             var isChecked = jQuery(this).is(':checked');
-            jQuery('.cleanup_post_type').prop('checked', isChecked);
+            jQuery('.cleanup_post_type').each(function() {
+                if (jQuery(this).prop('checked') !== isChecked) {
+                    jQuery(this).prop('checked', isChecked).trigger('change');
+                }
+            });
+            jQuery('.cleanup_revision_post_types, .cleanup_trash_post_types, .cleanup_auto_drafts_post_types, .cleanup_meta_post_types').prop('checked', isChecked);
         });
+
+        jQuery(document).on('click', '.cleanup-select-all-pts', function(e) {
+            e.preventDefault();
+            var targetClass = jQuery(this).data('target');
+            jQuery('.' + targetClass).prop('checked', true);
+        });
+
+        jQuery(document).on('click', '.cleanup-clear-all-pts', function(e) {
+            e.preventDefault();
+            var targetClass = jQuery(this).data('target');
+            jQuery('.' + targetClass).prop('checked', false);
+        });
+
+		jQuery('.cleanup_post_type').change(function() {
+			var isChecked = jQuery(this).is(':checked');
+			var val = jQuery(this).val();
+			var targetId;
+			if (val === 'all_orphan_duplicate') {
+				targetId = '#all_orphan_duplicate_advanced';
+			} else {
+				targetId = '#cleanup_' + val + '_advanced';
+			}
+			if (isChecked) {
+				jQuery(targetId).slideDown();
+			} else {
+				jQuery(targetId).slideUp();
+			}
+			updateSelectAllState();
+		});
+
+		// Run initially on load to set correct state
+		updateSelectAllState();
+
+		// Fetch post type counts for cleanup advanced options on page load
+		if ( jQuery('.cleanup-advanced-options').length ) {
+			jQuery.ajax({
+				url: ajaxurl,
+				type: 'POST',
+				data: {
+					action: 'wpbd_get_cleanup_post_type_counts'
+				},
+				success: function(response) {
+					if ( response.success ) {
+						var counts = response.data;
+
+						// 1. Revisions
+						jQuery('.cleanup_revision_post_types').each(function() {
+							var $input = jQuery(this);
+							var postType = $input.val();
+							var count = counts.revision[postType] || 0;
+							$input.parent().append(' <span class="cleanup-pt-count" style="color: #666; font-size: 11px;">(' + count + ')</span>');
+						});
+
+						// 2. Trash
+						jQuery('.cleanup_trash_post_types').each(function() {
+							var $input = jQuery(this);
+							var postType = $input.val();
+							var count = counts.trash[postType] || 0;
+							$input.parent().append(' <span class="cleanup-pt-count" style="color: #666; font-size: 11px;">(' + count + ')</span>');
+						});
+
+						// 3. Auto drafts
+						jQuery('.cleanup_auto_drafts_post_types').each(function() {
+							var $input = jQuery(this);
+							var postType = $input.val();
+							var count = counts.auto_drafts[postType] || 0;
+							$input.parent().append(' <span class="cleanup-pt-count" style="color: #666; font-size: 11px;">(' + count + ')</span>');
+						});
+
+						// 4. Metadata cleanup
+						jQuery('.cleanup_meta_post_types').each(function() {
+							var $input = jQuery(this);
+							var postType = $input.val();
+							var count = counts.meta[postType] || 0;
+							$input.parent().append(' <span class="cleanup-pt-count" style="color: #666; font-size: 11px;">(' + count + ')</span>');
+						});
+					}
+				}
+			});
+		}
+
+		jQuery('#run_post_cleanup_submit').on('click', function() {
+			// Validate that at least one cleanup type is selected
+			var checkedTypes = jQuery('.cleanup_post_type:checked');
+			if (checkedTypes.length === 0) {
+				jQuery('.cleanup_delete_notice').html('<div class="notice wpbd-notice notice-error is-dismissible"><p><strong>Please select at least one cleanup type to proceed.</strong></p></div>');
+				jQuery('html, body').animate({ scrollTop: jQuery('.cleanup_delete_notice').offset().top - 80 }, 500);
+				return;
+			}
+			// Trigger form submit — wpbd-progress.js will intercept this
+			// and handle via AJAX batched deletion with progress bar
+			jQuery("#cleanup").submit();
+		});
+	});
+
+	function validateSchedule(formId) {
+		let selected = jQuery('input[name="delete_time"]:checked').val();
+
+		if(selected === "scheduled"){
+			let datetime = jQuery("#delete_datetime").val().trim();
+			let schedulename = jQuery("input[name='schedule_name']").val().trim();
+
+			if(datetime === ""){
+				alert("Please select a scheduled date & time.");
+				return false;
+			}
+
+			if(schedulename === ""){
+				alert("Please enter a schedule name.");
+				return false;
+			}
+
+			jQuery("#" + formId).attr('action', wpBulkDeleteData.siteUrl + '/wp-admin/admin-post.php');
+			jQuery("#" + formId).submit();
+			return false;
+		}
+
+		return true;
+	}
+
+	function toggleInputs() {
+		var userMetaVal    = $('select[name="user_meta_compare"]').val();
+		var customFieldVal = $('select[name="custom_field_compare"]').val();
+		var termMetaVal    = $('select[name="term_meta_compare"]').val();
+		var disable        = ['not_exist', 'is_null', 'is_not_null'];
+
+		if (disable.includes(userMetaVal) || disable.includes(customFieldVal) || disable.includes(termMetaVal)) {
+			$('.user_meta_value, .custom_field_value, .term_meta_value').prop('disabled', true);
+		} else {
+			$('.user_meta_value, .custom_field_value, .term_meta_value').prop('disabled', false);
+		}
+	}
+
+	jQuery(document).ready(function() {
+		$('select[name="user_meta_compare"], select[name="custom_field_compare"], select[name="term_meta_compare"]').on('change', toggleInputs);
+		toggleInputs();
 	});
 
 })( jQuery );

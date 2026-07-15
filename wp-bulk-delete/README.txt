@@ -4,8 +4,8 @@ Donate link: http://xylusthemes.com
 Tags: delete, bulk, clean database, bulk delete, bulk clean
 Requires at least: 4.9
 Requires PHP: 5.3
-Tested up to: 6.8 
-Stable tag: 1.3.6
+Tested up to: 7.0 
+Stable tag: 1.4.3
 License: GPLv2 or later
 License URI: http://www.gnu.org/licenses/gpl-2.0.html
 
@@ -21,6 +21,7 @@ posts delete, delete all, mass delete, delete posts, delete comments, delete use
 
 ## 💻 Database Cleanup
 * ✅ Delete Auto Drafts, Trash Posts, and Revisions
+* ✅ Advanced Cleanup: Clean up revisions, auto-drafts, and trash for specific separate post types (e.g., custom post types) [PRO Version](https://xylusthemes.com/plugins/wp-bulk-delete/).
 * ✅ Delete Orphaned and Duplicate Meta:
    * 🗃️ Post Meta:
         * Orphan Post Meta
@@ -59,6 +60,8 @@ posts delete, delete all, mass delete, delete posts, delete comments, delete use
 * ✅ Delete Comments by Status.
 * ✅ Delete Comments by Types. [PRO Version](https://xylusthemes.com/plugins/wp-bulk-delete/).
 * ✅ Delete Comments by Authors. [PRO Version](https://xylusthemes.com/plugins/wp-bulk-delete/).
+* ✅ Delete Comments by Authors Email. [PRO Version](https://xylusthemes.com/plugins/wp-bulk-delete/).
+* ✅ Delete Comments by Meta Fields [PRO Version](https://xylusthemes.com/plugins/wp-bulk-delete/).
 * ✅ Delete Comments by Post. [PRO Version](https://xylusthemes.com/plugins/wp-bulk-delete/).
 * ✅ Delete Comments by Registration Date.
 * ✅ Schedule automatic comment deletion [PRO Version](https://xylusthemes.com/plugins/wp-bulk-delete/).
@@ -69,6 +72,9 @@ posts delete, delete all, mass delete, delete posts, delete comments, delete use
 * ✅ Assign deleted user data to another user [PRO Version](https://xylusthemes.com/plugins/wp-bulk-delete/).
 * ✅ Delete Users by User Meta. [PRO Version](https://xylusthemes.com/plugins/wp-bulk-delete/).
 * ✅ Delete Users by Email. [PRO Version](https://xylusthemes.com/plugins/wp-bulk-delete/).
+* ✅ Delete Users by Display Name. [PRO Version](https://xylusthemes.com/plugins/wp-bulk-delete/).
+* ✅ Delete Users by Nicename. [PRO Version](https://xylusthemes.com/plugins/wp-bulk-delete/).
+* ✅ Delete Users by Login. [PRO Version](https://xylusthemes.com/plugins/wp-bulk-delete/).
 * ✅ Schedule automatic user deletion [PRO Version](https://xylusthemes.com/plugins/wp-bulk-delete/).
 
 ## 🗃️ Deleting Categories and Tags
@@ -153,6 +159,38 @@ posts delete, delete all, mass delete, delete posts, delete comments, delete use
 10. 🔍 Delete WooCommerce General Filter
 
 == Changelog ==
+
+= 1.4.3 =
+* SECURITY: Improved security hardening and input sanitization.
+* FIXED: Fatal error in certain metadata cleanup scenarios.
+
+= 1.4.2 =
+* FIXED: AJAX error when deleting WooCommerce orders. ( Pro )
+
+= 1.4.1 =
+* ADDED: Real-time progress bar for batched deletion operations.
+* ADDED: Cancel Deletion button to stop running operations.
+* ADDED: Advanced Cleanup options allowing cleanup by separate post types (PRO).
+
+= 1.4.0 =
+* ADDED: Delete Term by Meta Fields. ( PRO )
+* IMPROVEMENTS: Support for WP 7.0
+* IMPROVEMENTS: Added Support for PHP 8.5 and some design and security fixes
+
+= 1.3.9 =
+* ADDED: Delete User by Display Name. ( PRO )
+* ADDED: Delete User by Nicename. ( PRO )
+* ADDED: Delete User by Login. ( PRO )
+* ADDED: Delete Comments by Authors Email. ( PRO )
+* ADDED: Delete Comments by Meta Fields. ( PRO )
+
+= 1.3.8 =
+* ADDED: Active/Pause button in schedule delete. ( PRO )
+* ADDED: Comment Description filter. ( PRO )
+* IMPROVEMENTS: User and Post meta key fields changed from input to dropdown. ( PRO )
+
+= 1.3.7 =
+* FIX: Added admin permission checks for AJAX and removed redundant load_textdomain() function.
 
 = 1.3.6 =
 * ADDED: Delete WooCommerce Products Section ( PRO )

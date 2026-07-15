@@ -27,7 +27,7 @@ function wpbd_delete_users_page(){
 			<div id="poststuff">
 				<div id="post-body" class="metabox-holder columns-2">
 					<div id="postbox-container-2" class="postbox-container">
-						<form method="post" id="delete_users_form">
+						<form method="post" id="delete_users_form" class="wpbd-delete-form">
 							<div class="form-table">
 							
 								<div class="wpbd-card" >
@@ -94,8 +94,7 @@ function wpbd_delete_users_page(){
 													<div class="wpbd-blur" >
 														<div class="wpbd-blur-filter-option">
 															<?php
-																wpbd_render_form_custom_fields();
-																wpbd_render_form_post_contains();
+																do_action( 'wpbd_delete_users_advance_form' );
 															?>
 														</div>
 													</div>

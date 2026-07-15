@@ -3,7 +3,7 @@
  * Plugin Name:       WP Bulk Delete
  * Plugin URI:        http://xylusthemes.com/plugins/wp-bulk-delete/
  * Description:       Bulk delete and cleanup anything like posts, comments, users, meta fields, taxonomy terms. with powerful filter options.
- * Version:           1.3.6
+ * Version:           1.4.3
  * Author:            Xylus Themes
  * Author URI:        http://xylusthemes.com
  * License:           GPL-2.0+
@@ -47,9 +47,6 @@ class WP_Bulk_Delete{
 		if( ! isset( self::$instance ) && ! (self::$instance instanceof WP_Bulk_Delete ) ) {
 			self::$instance = new WP_Bulk_Delete();
 			self::$instance->setup_constants();
-
-			add_action( 'plugins_loaded', array( self::$instance, 'load_textdomain' ) );
-
 			self::$instance->includes();
 			self::$instance->api = new WPBD_Delete_API();
 		}
@@ -72,14 +69,14 @@ class WP_Bulk_Delete{
 	 *
 	 * @since 1.0.0
 	 */
-	public function __clone() { _doing_it_wrong( __FUNCTION__, esc_attr__( 'Cheatin&#8217; huh?', 'wp-bulk-delete' ), '1.3.6' ); }
+	public function __clone() { _doing_it_wrong( __FUNCTION__, esc_attr__( 'Cheatin&#8217; huh?', 'wp-bulk-delete' ), '1.4.3' ); }
 
 	/**
 	 * A dummy magic method to prevent WP_Bulk_Delete from being unserialized.
 	 *
 	 * @since 1.0.0
 	 */
-	public function __wakeup() { _doing_it_wrong( __FUNCTION__, esc_attr__( 'Cheatin&#8217; huh?', 'wp-bulk-delete' ), '1.3.6' ); }
+	public function __wakeup() { _doing_it_wrong( __FUNCTION__, esc_attr__( 'Cheatin&#8217; huh?', 'wp-bulk-delete' ), '1.4.3' ); }
 
 
 	/**
@@ -93,7 +90,7 @@ class WP_Bulk_Delete{
 
 		// Plugin version.
 		if( ! defined( 'WPBD_VERSION' ) ){
-			define( 'WPBD_VERSION', '1.3.6' );
+			define( 'WPBD_VERSION', '1.4.3' );
 		}
 
 		// Plugin folder Path.
@@ -128,6 +125,7 @@ class WP_Bulk_Delete{
 		require_once WPBD_PLUGIN_DIR . 'includes/class-delete-api.php';
 		require_once WPBD_PLUGIN_DIR . 'includes/common-functions.php';
 		require_once WPBD_PLUGIN_DIR . 'includes/ajax-functions.php';
+		require_once WPBD_PLUGIN_DIR . 'includes/ajax-delete-handler.php';
 		require_once WPBD_PLUGIN_DIR . 'includes/delele-posts-form-functions.php';
 		require_once WPBD_PLUGIN_DIR . 'includes/delele-users-form-functions.php';
 		require_once WPBD_PLUGIN_DIR . 'includes/delele-comments-form-functions.php';
@@ -142,24 +140,6 @@ class WP_Bulk_Delete{
 		require_once WPBD_PLUGIN_DIR . 'includes/admin/cleanup/cleanup-form.php';
 		require_once WPBD_PLUGIN_DIR . 'includes/admin/support-page.php';
 	}
-
-	/**
-	 * Loads the plugin language files.
-	 * 
-	 * @access public
-	 * @since 1.0.0
-	 * @return void
-	 */
-	public function load_textdomain(){
-
-		load_plugin_textdomain(
-			'wp-bulk-delete',
-			false,
-			basename( dirname( __FILE__ ) ) . '/languages'
-		);
-	
-	}
-	
 }
 
 endif; // End If class exists check.
